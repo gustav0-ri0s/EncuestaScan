@@ -290,11 +290,155 @@ app.post('/api/scan-sheet', async (req, res) => {
   }
 });
 
+/**
+ * Formato "Resultados de aplicación": una fila por estudiante con los ítems
+ * agrupados por dimensión y fórmulas de total (réplica de la plantilla del equipo).
+ */
+function addResultadosSheet(
+  workbook: ExcelJS.Workbook,
+  name: string,
+  dimensionNames: [string, string, string],
+  totalLabel: string,
+  rows: Array<Array<number | ''>>
+) {
+  const ws = workbook.addWorksheet(name);
+  // Columnas: A=ID | B-G ítems 1-6 | H total D1 | I-L ítems 7-10 | M total D2 | N-S ítems 11-16 | T total D3 | U total
+  const itemColumns = [
+    ...['B', 'C', 'D', 'E', 'F', 'G'],
+    ...['I', 'J', 'K', 'L'],
+    ...['N', 'O', 'P', 'Q', 'R', 'S'],
+  ];
+  const widths: Record<string, number> = { B: 6.8, H: 13.8, I: 10.9, M: 11.6, N: 10.1 };
+  for (const [col, width] of Object.entries(widths)) ws.getColumn(col).width = width;
+
+  const border: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin' },
+    left: { style: 'thin' },
+    bottom: { style: 'thin' },
+    right: { style: 'thin' },
+  };
+  const font = { name: 'Calibri', size: 11 };
+  const center: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertical: 'middle' };
+
+  const headers: Array<[string, string]> = [
+    ['A1:A2', 'ID'],
+    ['B1:G1', `DIMENSION: ${dimensionNames[0]}`],
+    ['H1:H2', 'TOTAL D1 '],
+    ['I1:L1', `DIMENSION: ${dimensionNames[1]}`],
+    ['M1:M2', 'TOTAL D2 '],
+    ['N1:S1', `DIMENSION: ${dimensionNames[2]}`],
+    ['T1:T2', 'TOTAL D3 '],
+    ['U1:U2', totalLabel],
+  ];
+  for (const [range, label] of headers) {
+    ws.mergeCells(range);
+    ws.getCell(range.split(':')[0]).value = label;
+  }
+  itemColumns.forEach((col, i) => {
+    ws.getCell(`${col}2`).value = `I${i + 1}`;
+  });
+  for (const r of [1, 2]) {
+    for (let c = 1; c <= 21; c++) {
+      const cell = ws.getRow(r).getCell(c);
+      cell.border = border;
+      cell.font = font;
+      cell.alignment = center;
+    }
+  }
+
+  const sum = (values: Array<number | ''>) =>
+    values.reduce<number>((acc, v) => acc + (typeof v === 'number' ? v : 0), 0);
+
+  rows.forEach((answers, idx) => {
+    const r = idx + 3;
+    ws.getCell(`A${r}`).value = idx + 1;
+    itemColumns.forEach((col, i) => {
+      const v = answers[i];
+      ws.getCell(`${col}${r}`).value = v === '' ? null : v;
+    });
+    const d1 = sum(answers.slice(0, 6));
+    const d2 = sum(answers.slice(6, 10));
+    const d3 = sum(answers.slice(10, 16));
+    ws.getCell(`H${r}`).value = { formula: `SUM(B${r}:G${r})`, result: d1 };
+    ws.getCell(`M${r}`).value = { formula: `SUM(I${r}:L${r})`, result: d2 };
+    ws.getCell(`T${r}`).value = { formula: `SUM(N${r}:S${r})`, result: d3 };
+    ws.getCell(`U${r}`).value = { formula: `H${r}+M${r}+T${r}`, result: d1 + d2 + d3 };
+    for (let c = 1; c <= 21; c++) {
+      const cell = ws.getRow(r).getCell(c);
+      cell.border = border;
+      cell.font = font;
+    }
+  });
+}
+
+/** Orden de aplicación: por archivo (en el orden en que se escaneó) y luego por número de página */
+function sortByApplicationOrder(sheets: QuestionnaireSheet[]): QuestionnaireSheet[] {
+  const firstScanOfFile = new Map<string, string>();
+  for (const s of sheets) {
+    const key = s.sourceFileName ?? s.id;
+    const prev = firstScanOfFile.get(key);
+    if (!prev || s.scannedAt < prev) firstScanOfFile.set(key, s.scannedAt);
+  }
+  return [...sheets].sort((a, b) => {
+    const fa = firstScanOfFile.get(a.sourceFileName ?? a.id)!;
+    const fb = firstScanOfFile.get(b.sourceFileName ?? b.id)!;
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    if (a.sourcePage !== undefined && b.sourcePage !== undefined && a.sourcePage !== b.sourcePage) {
+      return a.sourcePage - b.sourcePage;
+    }
+    return a.scannedAt < b.scannedAt ? -1 : a.scannedAt > b.scannedAt ? 1 : 0;
+  });
+}
+
+async function buildResultadosWorkbook(unordered: QuestionnaireSheet[]) {
+  const sheets = sortByApplicationOrder(unordered);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Escáner Autoestima Académica — EESPP Tarapoto';
+  workbook.created = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
+
+  const byDimension = (id: string) => DIMENSIONS.find((d) => d.id === id)?.name ?? id;
+  addResultadosSheet(
+    workbook,
+    'V1',
+    [byDimension('autoconcepto'), byDimension('valoracion'), byDimension('actores')],
+    'TOTAL V1',
+    sheets.map((sheet) => QUESTIONNAIRE_ITEMS.map((i) => sheet.answers[i.number] ?? ''))
+  );
+  // La variable 2 se mide con otro instrumento: se deja la hoja con los mismos ID para completarla
+  addResultadosSheet(
+    workbook,
+    'V2',
+    ['Comprensión conceptual', 'Resolución de problemas', 'Argumentación y comunicación matemática'],
+    'TOTAL DE V2',
+    sheets.map(() => QUESTIONNAIRE_ITEMS.map(() => ''))
+  );
+  return workbook;
+}
+
 app.post('/api/export-excel', async (req, res) => {
   try {
-    const { sheets } = req.body as { sheets?: QuestionnaireSheet[] };
+    const { sheets, format } = req.body as {
+      sheets?: QuestionnaireSheet[];
+      format?: 'consolidado' | 'resultados';
+    };
     if (!Array.isArray(sheets) || sheets.length === 0) {
       res.status(400).json({ error: 'No hay fichas registradas para exportar.' });
+      return;
+    }
+
+    if (format === 'resultados') {
+      const workbook = await buildResultadosWorkbook(sheets);
+      const buffer = await workbook.xlsx.writeBuffer();
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="Resultados_de_Aplicacion_${new Date().toISOString().slice(0, 10)}.xlsx"`
+      );
+      res.send(Buffer.from(buffer));
       return;
     }
 

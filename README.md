@@ -80,8 +80,8 @@ Detecta el error **429** de cuota, espera el tiempo indicado por Google, reinten
 </td>
 <td width="50%" valign="top">
 
-### 📊 Consolidado en Excel
-Exporta un `.xlsx` con tres hojas: **Resumen por Ítem**, **Resumen por Dimensión** y **Registro por Estudiante**.
+### 📊 Excel en dos formatos
+**Consolidado de análisis** (Resumen por Ítem, por Dimensión y Registro por Estudiante) o **Resultados de aplicación** (hojas V1/V2: una fila por estudiante con totales por dimensión).
 
 </td>
 </tr>
@@ -94,8 +94,8 @@ Escanea con la cámara del celular o sube fotos. Incluye **realce de contraste**
 </td>
 <td width="50%" valign="top">
 
-### 💾 Todo queda guardado
-Las fichas se guardan en el navegador y **sobreviven a recargas y reinicios**. Además de las marcas, se pueden editar nombre, grado y fecha.
+### 💾 Respaldo y portabilidad
+Las fichas se guardan en el navegador y **sobreviven a recargas y reinicios**. Con **Exportar / Importar respaldo** las llevas a otra computadora sin volver a escanear.
 
 </td>
 </tr>
@@ -192,7 +192,15 @@ Abre **http://localhost:3000** en tu navegador. 🎉
    - corrige a mano tocando los botones 1–5, o
    - pulsa **✨ Revisar con IA** para que Gemini resuelva los ítems dudosos.
 5. **Guarda.** La hoja pasa a 📝 *Revisada*.
-6. **Exporta** el consolidado con **Exportar Excel**.
+6. **Exporta** con **Exportar Excel** y elige el formato: *Consolidado de análisis* o *Resultados de aplicación*.
+
+### 💾 Llevar las fichas a otra computadora
+
+1. En la computadora original: **Fichas → Exportar respaldo** (descarga un `.json`).
+2. En la nueva: instala el proyecto y ve a **Fichas → Importar respaldo**.
+
+Importar varias veces no duplica fichas: las existentes se actualizan y las nuevas se agregan.
+> ⚠️ El respaldo contiene nombres de estudiantes: guárdalo en un lugar seguro y **no lo subas al repositorio**.
 
 > 🖨️ La plantilla oficial en PDF está en la app (enlace **Plantilla PDF**) y en
 > `public/assets/aistudio/`. Imprímela tal cual: la lectura local depende de su diseño.

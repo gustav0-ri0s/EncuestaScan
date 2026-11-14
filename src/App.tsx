@@ -9,6 +9,7 @@ import {
 import { CameraScanner } from './components/CameraScanner';
 import { ConsolidatedTable } from './components/ConsolidatedTable';
 import { ScannedSheetsList } from './components/ScannedSheetsList';
+import { ExportFormatDialog, type ExportFormat } from './components/ExportFormatDialog';
 import { ScanModeSelector } from './components/ScanModeSelector';
 import { ScanVerifier, type VerifierDraft } from './components/ScanVerifier';
 import {
@@ -97,6 +98,7 @@ export default function App() {
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportTargets, setExportTargets] = useState<QuestionnaireSheet[] | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
@@ -673,14 +675,37 @@ export default function App() {
     setActiveTab('scan');
   };
 
+  // Las fichas con el mismo id se reemplazan por la versión del respaldo; las demás se agregan
+  const handleImportSheets = (imported: QuestionnaireSheet[]) => {
+    const existingIds = new Set(sheets.map((s) => s.id));
+    const updated = imported.filter((s) => existingIds.has(s.id)).length;
+    const added = imported.length - updated;
+    const importedById = new Map(imported.map((s) => [s.id, s]));
+
+    setSheets((prev) => [
+      ...imported.filter((s) => !existingIds.has(s.id)),
+      ...prev.map((s) => importedById.get(s.id) ?? s),
+    ]);
+    setNoticeMessage(
+      `Respaldo importado: ${added} ${added === 1 ? 'ficha nueva' : 'fichas nuevas'}` +
+        (updated > 0 ? ` y ${updated} actualizadas.` : '.')
+    );
+  };
+
   const handleDeleteSheet = (id: string) => {
     sessionImagesRef.current.delete(id);
     setSheets((prev) => prev.filter((s) => s.id !== id));
     setNoticeMessage('Ficha eliminada.');
   };
 
-  const handleExportExcel = async (targetSheets: QuestionnaireSheet[]) => {
+  // Primero se elige el formato; la descarga ocurre al confirmar en el diálogo
+  const handleExportExcel = (targetSheets: QuestionnaireSheet[]) => {
     if (targetSheets.length === 0 || isExporting) return;
+    setExportTargets(targetSheets);
+  };
+
+  const runExport = async (targetSheets: QuestionnaireSheet[], format: ExportFormat) => {
+    setExportTargets(null);
     setIsExporting(true);
     setErrorMessage(null);
     try {
@@ -688,6 +713,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          format,
           sheets: targetSheets.map(({ thumbnailDataUrl: _t, ...clean }) => clean),
         }),
       });
@@ -701,14 +727,20 @@ export default function App() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Autoestima_Academica_Consolidado_${new Date()
-        .toISOString()
-        .slice(0, 10)}.xlsx`;
+      const date = new Date().toISOString().slice(0, 10);
+      a.download =
+        format === 'resultados'
+          ? `Resultados_de_Aplicacion_${date}.xlsx`
+          : `Autoestima_Academica_Consolidado_${date}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setNoticeMessage('Archivo Excel (.xlsx) descargado con las 3 hojas de análisis.');
+      setNoticeMessage(
+        format === 'resultados'
+          ? 'Archivo Excel descargado en formato Resultados de aplicación (V1 y V2).'
+          : 'Archivo Excel (.xlsx) descargado con las 3 hojas de análisis.'
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'No se pudo descargar el archivo Excel.';
       setErrorMessage(msg);
@@ -889,6 +921,7 @@ export default function App() {
             sheets={sheets}
             onEditSheet={handleEditSheet}
             onDeleteSheet={handleDeleteSheet}
+            onImportSheets={handleImportSheets}
             onClearAll={() => {
               sessionImagesRef.current.clear();
               setSheets([]);
@@ -899,6 +932,14 @@ export default function App() {
           />
         )}
       </main>
+
+      {exportTargets && (
+        <ExportFormatDialog
+          sheetCount={exportTargets.length}
+          onChoose={(format) => runExport(exportTargets, format)}
+          onClose={() => setExportTargets(null)}
+        />
+      )}
 
       {/* Pie de página discreto */}
       <footer className="hidden md:block border-t border-slate-200 bg-white">

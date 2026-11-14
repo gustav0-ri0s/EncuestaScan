@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { Camera, Edit3, Search, Trash2, Users } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { AlertCircle, Camera, Download, Edit3, Loader2, Search, Trash2, Upload, Users } from 'lucide-react';
 import { computeSheetScore, type QuestionnaireSheet } from '../data/questionnaire';
+import { downloadBackup, readBackupFile } from '../utils/backup';
 
 interface ScannedSheetsListProps {
   sheets: QuestionnaireSheet[];
@@ -8,6 +9,7 @@ interface ScannedSheetsListProps {
   onDeleteSheet: (id: string) => void;
   onClearAll: () => void;
   onGoScan: () => void;
+  onImportSheets: (sheets: QuestionnaireSheet[]) => void;
 }
 
 export const ScannedSheetsList: React.FC<ScannedSheetsListProps> = ({
@@ -16,9 +18,59 @@ export const ScannedSheetsList: React.FC<ScannedSheetsListProps> = ({
   onDeleteSheet,
   onClearAll,
   onGoScan,
+  onImportSheets,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      onImportSheets(await readBackupFile(file));
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'No se pudo importar el respaldo.');
+    } finally {
+      setImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const importControls = (
+    <>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => handleImportFile(e.target.files?.[0])}
+      />
+      <button
+        type="button"
+        disabled={importing}
+        onClick={() => importInputRef.current?.click()}
+        title="Cargar fichas desde un archivo de respaldo (.json)"
+        className="min-h-[42px] px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-medium inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 disabled:opacity-60"
+      >
+        {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+        <span>Importar respaldo</span>
+      </button>
+    </>
+  );
+
+  const importErrorBanner = importError && (
+    <div
+      role="alert"
+      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800 flex items-start gap-2 text-left"
+    >
+      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+      <span>{importError}</span>
+    </div>
+  );
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -46,14 +98,21 @@ export const ScannedSheetsList: React.FC<ScannedSheetsListProps> = ({
             corregir cualquier respuesta o eliminarlo.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onGoScan}
-          className="min-h-[44px] px-5 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0"
-        >
-          <Camera className="w-4 h-4" />
-          <span>Escanear ficha</span>
-        </button>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={onGoScan}
+            className="min-h-[44px] px-5 py-2.5 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0"
+          >
+            <Camera className="w-4 h-4" />
+            <span>Escanear ficha</span>
+          </button>
+          {importControls}
+        </div>
+        <p className="text-xs text-slate-500">
+          ¿Vienes de otra computadora? Importa el archivo de respaldo (.json) que exportaste allí.
+        </p>
+        {importErrorBanner}
       </div>
     );
   }
@@ -72,7 +131,17 @@ export const ScannedSheetsList: React.FC<ScannedSheetsListProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => downloadBackup(sheets)}
+            title="Descargar todas las fichas en un archivo para llevarlas a otra computadora"
+            className="min-h-[42px] px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Exportar respaldo</span>
+          </button>
+          {importControls}
           {!confirmClear ? (
             <button
               type="button"
@@ -106,6 +175,8 @@ export const ScannedSheetsList: React.FC<ScannedSheetsListProps> = ({
           )}
         </div>
       </div>
+
+      {importErrorBanner}
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
