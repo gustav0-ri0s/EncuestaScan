@@ -1,0 +1,6 @@
+{
+  "name": "Escáner Autoestima Académica",
+  "description": "Escáner móvil y de escritorio con cámara para detectar marcas (X) en el Cuestionario de Autoestima Académica y exportar el consolidado en Excel.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
